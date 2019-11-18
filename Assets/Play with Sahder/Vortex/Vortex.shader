@@ -1,23 +1,20 @@
 ﻿// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
 
-Shader "Vernon/Vortex"
-{
-	Properties
-	{
-		[PerRendererData] _MainTex("Sprite Texture", 2D) = "white" {}
+Shader "Vernon/Vortex" {
+	Properties {
+		_MainTex("Sprite Texture", 2D) = "white" {}
 		_Color("Tint", Color) = (1,1,1,1)
-		[MaterialToggle] PixelSnap("Pixel snap", Float) = 0
+		_Duration("Duration", float) = 1
+		_Factor("Facotr", float) = 8
+		_Transparency("Transparency", range(0,1)) = 1
 	}
 
-		SubShader
-		{
-			Tags
-			{
+		SubShader {
+			Tags {
 				"Queue" = "Transparent"
 				"IgnoreProjector" = "True"
 				"RenderType" = "Transparent"
 				"PreviewType" = "Plane"
-				"CanUseSpriteAtlas" = "True"
 			}
 
 			Cull Off
@@ -25,12 +22,6 @@ Shader "Vernon/Vortex"
 			ZWrite Off
 			Blend One OneMinusSrcAlpha
 
-
-			//-----add
-			GrabPass {
-				"_MyGrabTex"
-			}
-			//---------
 
 			Pass {
 				CGPROGRAM
@@ -51,82 +42,75 @@ Shader "Vernon/Vortex"
 					float2 texcoord  : TEXCOORD0;
 				};
 
+				sampler2D _MainTex;
+
 				fixed4 _Color;
 
-				//------------add
-				float _Radius;
-				float _Angle;
-				sampler2D _MyGrabTex;
-				float2 swirl(float2 uv);
+				float _Duration;
+
+				float _Factor;
+
+				float _Transparency;
+
 				float2 swirl(float2 uv) {
-					//先减去贴图中心点的纹理坐标,这样是方便旋转计算 
+					//先减去贴图中心点的纹理坐标，方便旋转计算 
 					uv -= float2(0.5, 0.5);
 
-					//计算当前坐标与中心点的距离。 
+					//计算旋转范围
+					int tmp = _Time.y / _Duration;
+					float time = _Time.y - (tmp * _Duration);
+					float factor = time / _Duration;
+
+					//计算当前坐标与中心点的距离 
 					float dist = length(uv);
 
-					//计算出旋转的百分比 
-					float percent = (_Radius - dist) / _Radius;
+					//计算当前顶点是否在旋转范围内
+					float percent = (factor - dist) / (factor);
 
 					if (percent < 1.0 && percent >= 0.0) {
-						//通过sin,cos来计算出旋转后的位置。 
-						float theta = percent * percent * _Angle * 8.0;
-						float s = sin(theta);
-						float c = cos(theta);
-						//uv = float2(dot(uv, float2(c, -s)), dot(uv, float2(s, c))); 
-						uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+						//计算旋转角度
+						float angle = percent * percent * time * _Factor;
+
+						float y = sin(angle);
+						float x = cos(angle);
+
+						//计算旋转后的位置
+						uv = float2(uv.x * x - uv.y * y, uv.x * y + uv.y * x);
 					}
 
-					//再加上贴图中心点的纹理坐标，这样才正确。 
+					//加上贴图中心点的纹理坐标。
 					uv += float2(0.5, 0.5);
 
 					return uv;
 				}
-				//---------------
 
-				v2f vert(appdata_t IN) {
-					v2f OUT;
-					OUT.vertex = UnityObjectToClipPos(IN.vertex);
-					OUT.texcoord = IN.texcoord;
-					OUT.color = IN.color * _Color;
-					#ifdef PIXELSNAP_ON
-					OUT.vertex = UnityPixelSnap(OUT.vertex);
-					#endif
-
-					return OUT;
-				}
-
-				sampler2D _MainTex;
-				sampler2D _AlphaTex;
-				float _AlphaSplitEnabled;
 
 				fixed4 SampleSpriteTexture(float2 uv) {
 					fixed4 color = tex2D(_MainTex, uv);
-
-					//----------modify
-					//fixed4 color = tex2D(_MyGrabTex, float2(uv.x,1-uv.y));
-					//-----------
-
-
-			#if UNITY_TEXTURE_ALPHASPLIT_ALLOWED
-					if (_AlphaSplitEnabled)
-						color.a = tex2D(_AlphaTex, uv).r;
-			#endif //UNITY_TEXTURE_ALPHASPLIT_ALLOWED
-
 					return color;
 				}
 
-				fixed4 frag(v2f IN) : SV_Target
-				{
-					//---add
-					IN.texcoord = swirl(IN.texcoord);
-				//--------
+				v2f vert(appdata_t v) {
+					v2f o;
+					o.vertex = UnityObjectToClipPos(v.vertex);
+					o.texcoord = v.texcoord;
+					o.color = v.color * _Color;
+					return o;
+				}
 
-				fixed4 c = SampleSpriteTexture(IN.texcoord) * IN.color;
-				c.rgb *= c.a;
-				return c;
-			}
+				fixed4 frag(v2f i) : SV_Target {
+
+					i.texcoord = swirl(i.texcoord);
+
+					fixed4 c = tex2D(_MainTex, i.texcoord) * i.color;
+
+					c.a = _Transparency;
+					
+					c.rgb *= c.a;
+
+					return c;
+				}
 			ENDCG
 		}
-		}
+	}
 }
